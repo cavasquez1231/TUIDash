@@ -1,3 +1,3 @@
 - Today
 - Tomorrow
-- Other stuffr
+- Other stuff

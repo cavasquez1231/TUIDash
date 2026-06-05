@@ -1,8 +1,8 @@
 # TUIDash
 
-An ambient daily dashboard TUI application showing weather, tides, ferry times, and your Outlook calendar.
+A daily dashboard TUI application showing weather, tides, ferry times, and notes.
 
-![TUI Dashboard](https://via.placeholder.com/800x400?text=TUIDash+Screenshot)
+![TUI Dashboard](example.png)
 
 ## Features
 
