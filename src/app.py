@@ -4,11 +4,88 @@ import asyncio
 from datetime import datetime
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, Label
+from textual.containers import Container, Horizontal, Vertical, Center
+from textual.widgets import Header, Footer, Static, Label, Input, Button
+from textual.screen import ModalScreen
 
 from .widgets import WeatherWidget, TidesWidget, FerryWidget, NotesWidget
 from .config import Config
+
+
+class ApiKeyModal(ModalScreen[str]):
+    """Modal dialog for entering WSDOT API key."""
+
+    DEFAULT_CSS = """
+    ApiKeyModal {
+        align: center middle;
+    }
+
+    ApiKeyModal > Container {
+        width: 60;
+        height: auto;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    ApiKeyModal .modal-title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    ApiKeyModal .modal-text {
+        margin-bottom: 1;
+    }
+
+    ApiKeyModal Input {
+        margin-bottom: 1;
+    }
+
+    ApiKeyModal .button-row {
+        align: center middle;
+        height: auto;
+    }
+
+    ApiKeyModal Button {
+        margin: 0 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Container():
+            yield Label("⛴️ WSDOT API Key Required", classes="modal-title")
+            yield Label(
+                "Enter your WSDOT Ferries API key to enable ferry tracking.\n"
+                "Get a free key at: wsdot.wa.gov/traffic/api/",
+                classes="modal-text"
+            )
+            yield Input(placeholder="Paste your API key here...", id="api-key-input")
+            with Horizontal(classes="button-row"):
+                yield Button("Save", variant="primary", id="save-btn")
+                yield Button("Skip", variant="default", id="skip-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save-btn":
+            key = self.query_one("#api-key-input", Input).value.strip()
+            if key:
+                self.dismiss(key)
+            else:
+                self.notify("Please enter an API key", severity="error")
+        elif event.button.id == "skip-btn":
+            self.dismiss("")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        key = event.value.strip()
+        if key:
+            self.dismiss(key)
+
+    def action_cancel(self) -> None:
+        self.dismiss("")
 
 
 class StatusBar(Static):
@@ -108,6 +185,7 @@ class TUIDashApp(App):
         Binding("r", "refresh", "Refresh", show=True),
         Binding("?", "help", "Help", show=True),
         Binding("d", "toggle_dark", "Dark/Light", show=True),
+        Binding("k", "set_api_key", "API Key", show=False),
     ]
 
     def __init__(self):
@@ -137,11 +215,34 @@ class TUIDashApp(App):
 
     async def on_mount(self) -> None:
         """Called when app is mounted."""
-        # Initial data load
-        await self._refresh_all_widgets()
+        # Check for missing API key and prompt user
+        if not Config.WSDOT_API_KEY:
+            self.call_after_refresh(self._prompt_for_api_key)
+        else:
+            # Initial data load
+            await self._refresh_all_widgets()
 
         # Start auto-refresh loop
         self._refresh_task = asyncio.create_task(self._auto_refresh_loop())
+
+    def _prompt_for_api_key(self) -> None:
+        """Show the API key modal."""
+        self.push_screen(ApiKeyModal(), self._on_api_key_result)
+
+    def _on_api_key_result(self, key: str) -> None:
+        """Handle the result from the API key modal."""
+        if key:
+            Config.set_api_key(key)
+            self.notify("API key saved!", severity="information")
+        else:
+            self.notify("Ferry tracking disabled (no API key)", severity="warning")
+        
+        # Now refresh all widgets
+        asyncio.create_task(self._refresh_all_widgets())
+
+    async def action_set_api_key(self) -> None:
+        """Show the API key configuration modal."""
+        self.push_screen(ApiKeyModal(), self._on_api_key_result)
 
     async def on_unmount(self) -> None:
         """Called when app is unmounted."""
@@ -209,7 +310,7 @@ class TUIDashApp(App):
     def action_help(self) -> None:
         """Show help."""
         self.notify(
-            "Keys: [q]uit, [r]efresh, [d]ark mode, [?]help",
+            "Keys: [q]uit, [r]efresh, [d]ark mode, [k] API key, [?]help",
             title="TUIDash Help",
             timeout=5,
         )
@@ -217,15 +318,6 @@ class TUIDashApp(App):
 
 def main():
     """Entry point for the application."""
-    # Validate configuration
-    missing = Config.validate()
-    if missing:
-        print("⚠️  Missing configuration:")
-        for item in missing:
-            print(f"   - {item}")
-        print("\nCopy .env.example to .env and fill in the required values.")
-        print("The app will still run but some widgets may not work.\n")
-
     app = TUIDashApp()
     app.run()
 

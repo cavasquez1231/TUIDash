@@ -29,6 +29,13 @@ def get_config_paths() -> list[Path]:
     return paths
 
 
+def get_config_save_path() -> Path:
+    """Get the path to save config (prefers location next to exe or home dir)."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent / ".env"
+    return Path.home() / ".tuidash.env"
+
+
 # Load .env from first available location
 for env_path in get_config_paths():
     if env_path.exists():
@@ -54,6 +61,35 @@ class Config:
 
     # Ferry route (Edmonds-Kingston)
     FERRY_ROUTE: str = os.getenv("FERRY_ROUTE", "ed-king")
+
+    @classmethod
+    def set_api_key(cls, key: str) -> None:
+        """Set the WSDOT API key and save to config file."""
+        cls.WSDOT_API_KEY = key
+        os.environ["WSDOT_API_KEY"] = key
+        
+        # Save to config file
+        config_path = get_config_save_path()
+        
+        # Read existing config or start fresh
+        existing_lines = []
+        if config_path.exists():
+            existing_lines = config_path.read_text().splitlines()
+        
+        # Update or add the API key line
+        key_found = False
+        for i, line in enumerate(existing_lines):
+            if line.startswith("WSDOT_API_KEY="):
+                existing_lines[i] = f"WSDOT_API_KEY={key}"
+                key_found = True
+                break
+        
+        if not key_found:
+            existing_lines.append(f"WSDOT_API_KEY={key}")
+        
+        # Write back
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("\n".join(existing_lines) + "\n")
 
     @classmethod
     def validate(cls) -> list[str]:
