@@ -19,8 +19,13 @@ def get_config_paths() -> list[Path]:
     # Current working directory
     paths.append(Path.cwd() / ".env")
     
-    # Project root (development)
-    paths.append(Path(__file__).parent.parent / ".env")
+    # Project root (development) - only add if __file__ is available
+    try:
+        project_root = Path(__file__).parent.parent / ".env"
+        paths.append(project_root)
+    except (NameError, AttributeError):
+        # __file__ may not be available in some PyInstaller configurations
+        pass
     
     # User home directory
     paths.append(Path.home() / ".tuidash.env")
@@ -74,7 +79,11 @@ class Config:
         # Read existing config or start fresh
         existing_lines = []
         if config_path.exists():
-            existing_lines = config_path.read_text().splitlines()
+            try:
+                existing_lines = config_path.read_text().splitlines()
+            except (IOError, OSError):
+                # If we can't read, just continue with empty lines
+                existing_lines = []
         
         # Update or add the API key line
         key_found = False
@@ -87,9 +96,13 @@ class Config:
         if not key_found:
             existing_lines.append(f"WSDOT_API_KEY={key}")
         
-        # Write back
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text("\n".join(existing_lines) + "\n")
+        # Write back - with error handling
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text("\n".join(existing_lines) + "\n")
+        except (IOError, OSError, PermissionError) as e:
+            # Silently fail if we can't write - app will still work with in-memory config
+            print(f"Warning: Could not save API key to {config_path}: {e}", file=sys.stderr)
 
     @classmethod
     def validate(cls) -> list[str]:
